@@ -62,10 +62,18 @@ export default function VideoPlayer() {
       const fs = !!document.fullscreenElement;
       setIsFullscreen(fs);
       if (!fs) {
-        // when user exits fullscreen via ESC or other, revert to Horizontal
+        // when user exits fullscreen via ESC or other, revert to Horizontal and unlock orientation
         setOrientation('Horizontal');
-setShowSettings(false);
-setShowPlaylist(false);
+        setShowSettings(false);
+        setShowPlaylist(false);
+        // Unlock screen orientation when exiting fullscreen
+        try {
+          if (window.screen.orientation && window.screen.orientation.unlock) {
+            window.screen.orientation.unlock();
+          }
+        } catch (err) {
+          console.warn('Screen orientation unlock failed:', err);
+        }
       }
     };
     document.addEventListener('fullscreenchange', onFullChange);
@@ -101,6 +109,33 @@ setShowPlaylist(false);
     }
   };
 
+  // Lock screen orientation using Screen Orientation API (like YouTube does)
+  const lockOrientation = async (orient) => {
+    try {
+      if (window.screen.orientation && window.screen.orientation.lock) {
+        if (orient === 'Vertical') {
+          await window.screen.orientation.lock('portrait');
+        } else {
+          await window.screen.orientation.lock('landscape');
+        }
+      }
+    } catch (err) {
+      // Screen orientation lock may not be supported or allowed
+      console.warn('Screen orientation lock not supported:', err);
+    }
+  };
+
+  // Unlock screen orientation
+  const unlockOrientation = () => {
+    try {
+      if (window.screen.orientation && window.screen.orientation.unlock) {
+        window.screen.orientation.unlock();
+      }
+    } catch (err) {
+      console.warn('Screen orientation unlock failed:', err);
+    }
+  };
+
   // Toggle fullscreen and optionally set orientation. When requesting fullscreen, we request the player container.
   const toggleFullscreen = async (orient = 'Horizontal') => {
     const container = playerContainerRef.current;
@@ -112,6 +147,8 @@ setShowPlaylist(false);
       try {
         await container.requestFullscreen();
         setIsFullscreen(true);
+        // Lock the screen orientation after entering fullscreen
+        await lockOrientation(orient);
       } catch (err) {
         console.error('Error requesting fullscreen:', err);
       }
@@ -119,8 +156,11 @@ setShowPlaylist(false);
       // Already fullscreen: if orientation change requested, only change orientation state; otherwise exit
       if (orient && orient !== orientation) {
         setOrientation(orient);
+        // Lock to new orientation
+        await lockOrientation(orient);
       } else {
         try {
+          unlockOrientation();
           await document.exitFullscreen();
           setIsFullscreen(false);
           setOrientation('Horizontal');
@@ -132,9 +172,12 @@ setShowPlaylist(false);
     setShowSettings(false);
   };
 
-  const changeOrientation = (orient) => {
-    // This function only updates orientation state (useful when switching without toggling fullscreen)
+  const changeOrientation = async (orient) => {
+    // This function updates orientation state and locks screen orientation
     setOrientation(orient);
+    if (isFullscreen) {
+      await lockOrientation(orient);
+    }
   };
 
   const skipTime = (seconds) => {
@@ -166,25 +209,9 @@ setShowPlaylist(false);
 
   const progress = duration ? (currentTime / duration) * 100 : 0;
 
-  // When in fullscreen + Vertical orientation we rotate the inner wrapper 90deg,
-  // swap width/height using vw/vh and center using translate(-50%,-50%).
-  const isVerticalRotated = isFullscreen && orientation === 'Vertical';
-
-  const rotatedInnerStyle = isVerticalRotated
-    ? {
-        width: '100vh', // width becomes viewport height
-        height: '100vw', // height becomes viewport width
-        position: 'absolute',
-        left: '50%',
-        top: '50%',
-        transform: 'translate(-50%, -50%) rotate(90deg)',
-        transformOrigin: 'center center',
-        display: 'flex',
-        flexDirection: 'column',
-        // keep overflow hidden so rotated content doesn't cause scrollbars
-        overflow: 'hidden',
-      }
-    : { width: '100%', height: '100%' };
+  // No CSS rotation needed - we use the Screen Orientation API to actually lock device orientation
+  // This makes the system UI (status bar, navigation, volume) rotate properly like YouTube
+  const innerStyle = { width: '100%', height: '100%' };
 
   return (
     <div
@@ -197,8 +224,8 @@ setShowPlaylist(false);
           onMouseMove={handleMouseMove}
           onMouseLeave={() => isPlaying && setShowControls(false)}
         >
-          {/* Rotated inner wrapper: when vertical + fullscreen, this rotates the whole player */}
-          <div style={rotatedInnerStyle} className="relative">
+          {/* Inner wrapper for fullscreen content */}
+          <div style={innerStyle} className="relative">
             {/* Video Element */}
             <video
               ref={videoRef}
