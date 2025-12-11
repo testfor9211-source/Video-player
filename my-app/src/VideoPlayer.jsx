@@ -294,8 +294,9 @@ export default function VideoPlayer() {
                 <div className="flex items-center gap-4 relative">
                   <button
   onClick={() => {
-    if (!isFullscreen) return;        // ⛔ Block
-    setShowPlaylist(!showPlaylist);   // ✅ Work only in fullscreen
+    if (!isFullscreen) return;
+    setShowSettings(false);
+    setShowPlaylist(!showPlaylist);
   }}
   className={`text-white transition ${
     isFullscreen ? "hover:text-purple-400" : "opacity-40 cursor-not-allowed"
@@ -306,8 +307,9 @@ export default function VideoPlayer() {
 
                   <button
   onClick={() => {
-    if (!isFullscreen) return;       // ⛔ Block
-    setShowSettings(!showSettings);  // ✅ Work only in fullscreen
+    if (!isFullscreen) return;
+    setShowPlaylist(false);
+    setShowSettings(!showSettings);
   }}
   className={`text-white transition ${
     isFullscreen ? "hover:text-purple-400" : "opacity-40 cursor-not-allowed"
