@@ -35,6 +35,8 @@ export default function VideoPlayer() {
     { id: 1, title: 'Demo Video 1', duration: '10:24' },
     { id: 2, title: 'Demo Video 2', duration: '8:15' },
     { id: 3, title: 'Demo Video 3', duration: '12:30' },
+    { id: 4, title: 'Demo 4', duration: '5:45' },
+    { id: 5, title: 'Demo 5', duration: '7:20' },
   ];
 
   useEffect(() => {
@@ -329,18 +331,20 @@ export default function VideoPlayer() {
 
                   {/* Settings Menu */}
                   {showSettings && (
-                    <div className="absolute bottom-full right-0 mb-2 bg-gray-900 rounded-lg shadow-2xl p-4 min-w-48">
-                      <div className="text-white text-sm mb-3 font-semibold">Playback Speed</div>
-                      {[0.5, 0.75, 1, 1.25, 1.5, 2].map(rate => (
-                        <button
-                          key={rate}
-                          onClick={() => changePlaybackRate(rate)}
-                          className={`block w-full text-left px-3 py-2 rounded transition ${playbackRate === rate ? 'bg-purple-600 text-white' : 'text-gray-300 hover:bg-gray-800'}`}
-                        >
-                          {rate}x {rate === 1 && '(Normal)'}
-                        </button>
-                      ))}
-                      <div className="text-white text-sm mt-4 mb-3 font-semibold border-t border-gray-700 pt-3">Fullscreen Mode</div>
+                    <div className="absolute bottom-full right-0 mb-2 bg-gray-900 rounded-lg shadow-2xl p-4 min-w-56">
+                      <div className="text-white text-sm mb-2 font-semibold">Playback Speed</div>
+                      <div className="grid grid-cols-3 gap-1">
+                        {[0.5, 0.75, 1, 1.25, 1.5, 2].map(rate => (
+                          <button
+                            key={rate}
+                            onClick={() => changePlaybackRate(rate)}
+                            className={`px-2 py-1.5 rounded text-sm transition ${playbackRate === rate ? 'bg-purple-600 text-white' : 'text-gray-300 hover:bg-gray-800'}`}
+                          >
+                            {rate}x
+                          </button>
+                        ))}
+                      </div>
+                      <div className="text-white text-sm mt-3 mb-2 font-semibold border-t border-gray-700 pt-3">Fullscreen Mode</div>
                       {/* Horizontal/Vertical selection - clicking Vertical will request fullscreen + rotate */}
                       <button
                         onClick={() => { changeOrientation('Horizontal'); toggleFullscreen('Horizontal'); }}
