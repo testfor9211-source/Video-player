@@ -31,12 +31,13 @@ export default function VideoPlayer() {
   const [currentVideo, setCurrentVideo] = useState(0);
   const controlsTimeoutRef = useRef(null);
 
+  const defaultVideo = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
   const playlist = [
-    { id: 1, title: 'Demo Video 1', duration: '10:24', src: '' },
-    { id: 2, title: 'Demo Video 2', duration: '8:15', src: '' },
-    { id: 3, title: 'Demo Video 3', duration: '12:30', src: '' },
+    { id: 1, title: 'Demo Video 1', duration: '10:24', src: defaultVideo },
+    { id: 2, title: 'Demo Video 2', duration: '8:15', src: defaultVideo },
+    { id: 3, title: 'Demo Video 3', duration: '12:30', src: defaultVideo },
     { id: 4, title: 'Demo 4', duration: '5:45', src: 'https://sample.mp4' },
-    { id: 5, title: 'Demo 5', duration: '7:20', src: '' },
+    { id: 5, title: 'Demo 5', duration: '7:20', src: defaultVideo },
   ];
 
   useEffect(() => {
@@ -57,6 +58,14 @@ export default function VideoPlayer() {
       video.removeEventListener('ended', handleEnded);
     };
   }, []);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.load();
+    setCurrentTime(0);
+    setIsPlaying(false);
+  }, [currentVideo]);
 
   // Keep isFullscreen in sync with real fullscreen state and reset orientation when exiting
   useEffect(() => {
@@ -233,10 +242,9 @@ export default function VideoPlayer() {
               ref={videoRef}
               className={`bg-black ${isFullscreen ? 'w-full h-full object-contain' : 'w-full aspect-video'}`}
               onClick={togglePlay}
+              src={playlist[currentVideo].src}
               poster="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1920' height='1080'%3E%3Crect fill='%23111' width='1920' height='1080'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%23666' font-size='48' font-family='Arial'%3ESample Video%3C/text%3E%3C/svg%3E"
-            >
-              <source src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" type="video/mp4" />
-            </video>
+            />
 
             {/* Center Play Button Overlay */}
             {!isPlaying && (
