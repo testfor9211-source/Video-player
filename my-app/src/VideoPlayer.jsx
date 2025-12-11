@@ -32,11 +32,11 @@ export default function VideoPlayer() {
   const controlsTimeoutRef = useRef(null);
 
   const playlist = [
-    { id: 1, title: 'Demo Video 1', duration: '10:24' },
-    { id: 2, title: 'Demo Video 2', duration: '8:15' },
-    { id: 3, title: 'Demo Video 3', duration: '12:30' },
-    { id: 4, title: 'Demo 4', duration: '5:45' },
-    { id: 5, title: 'Demo 5', duration: '7:20' },
+    { id: 1, title: 'Demo Video 1', duration: '10:24', src: '' },
+    { id: 2, title: 'Demo Video 2', duration: '8:15', src: '' },
+    { id: 3, title: 'Demo Video 3', duration: '12:30', src: '' },
+    { id: 4, title: 'Demo 4', duration: '5:45', src: 'https://sample.mp4' },
+    { id: 5, title: 'Demo 5', duration: '7:20', src: '' },
   ];
 
   useEffect(() => {
@@ -334,7 +334,12 @@ export default function VideoPlayer() {
                   {/* Settings Menu */}
                   {showSettings && (
                     <div className="absolute bottom-full right-0 mb-2 bg-gray-900 rounded-lg shadow-2xl p-4 min-w-56">
-                      <div className="text-white text-sm mb-2 font-semibold">Playback Speed</div>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-white text-sm font-semibold">Playback Speed</div>
+                        <button onClick={() => setShowSettings(false)} className="text-gray-400 hover:text-white">
+                          ✕
+                        </button>
+                      </div>
                       <div className="grid grid-cols-3 gap-1">
                         {[0.5, 0.75, 1, 1.25, 1.5, 2].map(rate => (
                           <button
@@ -379,7 +384,7 @@ export default function VideoPlayer() {
                   {playlist.map((video, idx) => (
                     <div
                       key={video.id}
-                      onClick={() => setCurrentVideo(idx)}
+                      onClick={() => { setCurrentVideo(idx); setShowPlaylist(false); }}
                       className={`p-4 rounded-lg cursor-pointer transition ${currentVideo === idx ? 'bg-purple-600' : 'bg-gray-800 hover:bg-gray-700'}`}
                     >
                       <div className="text-white font-medium">{video.title}</div>
