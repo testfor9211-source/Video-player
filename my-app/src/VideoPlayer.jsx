@@ -10,7 +10,8 @@ import {
   SkipBack,
   SkipForward,
   Repeat,
-  ListVideo
+  ListVideo,
+  Loader2
 } from 'lucide-react';
 
 export default function VideoPlayer() {
@@ -26,10 +27,16 @@ export default function VideoPlayer() {
   const [showControls, setShowControls] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
-  const [orientation, setOrientation] = useState('Horizontal'); // 'Horizontal' || 'Vertical'
+  const [orientation, setOrientation] = useState('Horizontal');
   const [showPlaylist, setShowPlaylist] = useState(false);
   const [currentVideo, setCurrentVideo] = useState(0);
+  const [showThumbnail, setShowThumbnail] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [seekAnimation, setSeekAnimation] = useState({ show: false, direction: null });
+  
   const controlsTimeoutRef = useRef(null);
+  const leftTapRef = useRef({ count: 0, timer: null });
+  const rightTapRef = useRef({ count: 0, timer: null });
 
   const defaultVideo = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
   const playlist = [
@@ -47,15 +54,30 @@ export default function VideoPlayer() {
     const handleTimeUpdate = () => setCurrentTime(video.currentTime || 0);
     const handleLoadedMetadata = () => setDuration(video.duration || 0);
     const handleEnded = () => setIsPlaying(false);
+    const handleWaiting = () => setIsLoading(true);
+    const handleCanPlay = () => setIsLoading(false);
+    const handleSeeking = () => setIsLoading(true);
+    const handleSeeked = () => setIsLoading(false);
+    const handlePlaying = () => setIsLoading(false);
 
     video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
     video.addEventListener('ended', handleEnded);
+    video.addEventListener('waiting', handleWaiting);
+    video.addEventListener('canplay', handleCanPlay);
+    video.addEventListener('seeking', handleSeeking);
+    video.addEventListener('seeked', handleSeeked);
+    video.addEventListener('playing', handlePlaying);
 
     return () => {
       video.removeEventListener('timeupdate', handleTimeUpdate);
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
       video.removeEventListener('ended', handleEnded);
+      video.removeEventListener('waiting', handleWaiting);
+      video.removeEventListener('canplay', handleCanPlay);
+      video.removeEventListener('seeking', handleSeeking);
+      video.removeEventListener('seeked', handleSeeked);
+      video.removeEventListener('playing', handlePlaying);
     };
   }, []);
 
@@ -65,19 +87,23 @@ export default function VideoPlayer() {
     video.load();
     setCurrentTime(0);
     setIsPlaying(false);
+    setShowThumbnail(true);
+    setIsLoading(false);
   }, [currentVideo]);
 
-  // Keep isFullscreen in sync with real fullscreen state and reset orientation when exiting
   useEffect(() => {
     const onFullChange = () => {
       const fs = !!document.fullscreenElement;
+      const wasFullscreen = isFullscreen;
       setIsFullscreen(fs);
       if (!fs) {
-        // when user exits fullscreen via ESC or other, revert to Horizontal and unlock orientation
         setOrientation('Horizontal');
         setShowSettings(false);
         setShowPlaylist(false);
-        // Unlock screen orientation when exiting fullscreen
+        if (wasFullscreen && videoRef.current && !videoRef.current.paused) {
+          videoRef.current.pause();
+          setIsPlaying(false);
+        }
         try {
           if (window.screen.orientation && window.screen.orientation.unlock) {
             window.screen.orientation.unlock();
@@ -89,10 +115,24 @@ export default function VideoPlayer() {
     };
     document.addEventListener('fullscreenchange', onFullChange);
     return () => document.removeEventListener('fullscreenchange', onFullChange);
+  }, [isFullscreen]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden && videoRef.current && !videoRef.current.paused) {
+        videoRef.current.pause();
+        setIsPlaying(false);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
 
   const togglePlay = () => {
     if (!videoRef.current) return;
+    if (showThumbnail) {
+      setShowThumbnail(false);
+    }
     if (isPlaying) {
       videoRef.current.pause();
     } else {
@@ -120,7 +160,6 @@ export default function VideoPlayer() {
     }
   };
 
-  // Lock screen orientation using Screen Orientation API (like YouTube does)
   const lockOrientation = async (orient) => {
     try {
       if (window.screen.orientation && window.screen.orientation.lock) {
@@ -131,12 +170,10 @@ export default function VideoPlayer() {
         }
       }
     } catch (err) {
-      // Screen orientation lock may not be supported or allowed
       console.warn('Screen orientation lock not supported:', err);
     }
   };
 
-  // Unlock screen orientation
   const unlockOrientation = () => {
     try {
       if (window.screen.orientation && window.screen.orientation.unlock) {
@@ -147,27 +184,22 @@ export default function VideoPlayer() {
     }
   };
 
-  // Toggle fullscreen and optionally set orientation. When requesting fullscreen, we request the player container.
   const toggleFullscreen = async (orient = 'Horizontal') => {
     const container = playerContainerRef.current;
     if (!container) return;
 
-    // If not fullscreen: request and set orientation
     if (!document.fullscreenElement) {
       setOrientation(orient);
       try {
         await container.requestFullscreen();
         setIsFullscreen(true);
-        // Lock the screen orientation after entering fullscreen
         await lockOrientation(orient);
       } catch (err) {
         console.error('Error requesting fullscreen:', err);
       }
     } else {
-      // Already fullscreen: if orientation change requested, only change orientation state; otherwise exit
       if (orient && orient !== orientation) {
         setOrientation(orient);
-        // Lock to new orientation
         await lockOrientation(orient);
       } else {
         try {
@@ -184,7 +216,6 @@ export default function VideoPlayer() {
   };
 
   const changeOrientation = async (orient) => {
-    // This function updates orientation state and locks screen orientation
     setOrientation(orient);
     if (isFullscreen) {
       await lockOrientation(orient);
@@ -195,6 +226,47 @@ export default function VideoPlayer() {
     if (videoRef.current) {
       videoRef.current.currentTime += seconds;
     }
+  };
+
+  const showSeekAnimation = (direction) => {
+    setSeekAnimation({ show: true, direction });
+    setTimeout(() => {
+      setSeekAnimation({ show: false, direction: null });
+    }, 500);
+  };
+
+  const handleDoubleTapLeft = () => {
+    skipTime(-10);
+    showSeekAnimation('left');
+  };
+
+  const handleDoubleTapRight = () => {
+    skipTime(10);
+    showSeekAnimation('right');
+  };
+
+  const handleLeftZoneTap = (e) => {
+    e.stopPropagation();
+    leftTapRef.current.count++;
+    if (leftTapRef.current.timer) clearTimeout(leftTapRef.current.timer);
+    leftTapRef.current.timer = setTimeout(() => {
+      if (leftTapRef.current.count >= 2) {
+        handleDoubleTapLeft();
+      }
+      leftTapRef.current.count = 0;
+    }, 300);
+  };
+
+  const handleRightZoneTap = (e) => {
+    e.stopPropagation();
+    rightTapRef.current.count++;
+    if (rightTapRef.current.timer) clearTimeout(rightTapRef.current.timer);
+    rightTapRef.current.timer = setTimeout(() => {
+      if (rightTapRef.current.count >= 2) {
+        handleDoubleTapRight();
+      }
+      rightTapRef.current.count = 0;
+    }, 300);
   };
 
   const changePlaybackRate = (rate) => {
@@ -218,10 +290,17 @@ export default function VideoPlayer() {
     }, 3000);
   };
 
+  const handleControlsAreaClick = (e) => {
+    e.stopPropagation();
+    setShowControls(true);
+    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+    controlsTimeoutRef.current = setTimeout(() => {
+      if (isPlaying) setShowControls(false);
+    }, 3000);
+  };
+
   const progress = duration ? (currentTime / duration) * 100 : 0;
 
-  // No CSS rotation needed - we use the Screen Orientation API to actually lock device orientation
-  // This makes the system UI (status bar, navigation, volume) rotate properly like YouTube
   const innerStyle = { width: '100%', height: '100%' };
 
   return (
@@ -235,19 +314,43 @@ export default function VideoPlayer() {
           onMouseMove={handleMouseMove}
           onMouseLeave={() => isPlaying && setShowControls(false)}
         >
-          {/* Inner wrapper for fullscreen content */}
           <div style={innerStyle} className="relative">
-            {/* Video Element */}
             <video
               ref={videoRef}
               className={`bg-black ${isFullscreen ? 'w-full h-full object-contain' : 'w-full aspect-video'}`}
-              onClick={togglePlay}
               src={playlist[currentVideo].src}
-              poster="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1920' height='1080'%3E%3Crect fill='%23111' width='1920' height='1080'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%23666' font-size='48' font-family='Arial'%3ESample Video%3C/text%3E%3C/svg%3E"
             />
 
-            {/* Center Play Button Overlay */}
-            {!isPlaying && (
+            {showThumbnail && (
+              <div 
+                className="absolute inset-0 transition-opacity duration-500"
+                style={{
+                  backgroundImage: 'url(/thumbnail.jpg)',
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                  filter: 'blur(4px)',
+                }}
+              />
+            )}
+
+            {showThumbnail && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-40">
+                <button
+                  onClick={togglePlay}
+                  className="w-24 h-24 bg-purple-600 rounded-full flex items-center justify-center hover:bg-purple-700 transition-all transform hover:scale-110 shadow-2xl z-10"
+                >
+                  <Play className="w-12 h-12 text-white ml-2" fill="white" />
+                </button>
+              </div>
+            )}
+
+            {isLoading && !showThumbnail && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30 pointer-events-none">
+                <Loader2 className="w-16 h-16 text-purple-500 animate-spin" />
+              </div>
+            )}
+
+            {!showThumbnail && !isPlaying && !isLoading && (
               <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30 transition-opacity">
                 <button
                   onClick={togglePlay}
@@ -258,9 +361,37 @@ export default function VideoPlayer() {
               </div>
             )}
 
-            {/* Controls Overlay */}
-            <div className={`absolute bottom-0 left-0 right-0 z-50 bg-gradient-to-t from-black via-black/90 to-transparent transition-opacity duration-300 ${showControls || !isPlaying ? 'opacity-100' : 'opacity-0'}`}>
-              {/* Progress Bar */}
+            <div 
+              className="absolute left-0 top-0 bottom-0 w-1/3 z-20"
+              onClick={handleLeftZoneTap}
+            />
+            <div 
+              className="absolute right-0 top-0 bottom-0 w-1/3 z-20"
+              onClick={handleRightZoneTap}
+            />
+
+            {seekAnimation.show && seekAnimation.direction === 'left' && (
+              <div className="absolute left-8 top-1/2 -translate-y-1/2 flex items-center gap-2 text-white animate-pulse z-30 pointer-events-none">
+                <div className="flex items-center gap-1 bg-black bg-opacity-60 rounded-full px-4 py-2">
+                  <SkipBack className="w-8 h-8" />
+                  <span className="text-lg font-bold">10s</span>
+                </div>
+              </div>
+            )}
+
+            {seekAnimation.show && seekAnimation.direction === 'right' && (
+              <div className="absolute right-8 top-1/2 -translate-y-1/2 flex items-center gap-2 text-white animate-pulse z-30 pointer-events-none">
+                <div className="flex items-center gap-1 bg-black bg-opacity-60 rounded-full px-4 py-2">
+                  <span className="text-lg font-bold">10s</span>
+                  <SkipForward className="w-8 h-8" />
+                </div>
+              </div>
+            )}
+
+            <div 
+              className={`absolute bottom-0 left-0 right-0 z-50 bg-gradient-to-t from-black via-black/90 to-transparent transition-opacity duration-300 ${showControls || !isPlaying ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+              onClick={handleControlsAreaClick}
+            >
               <div className="px-6 pt-8 pb-2">
                 <input
                   type="range"
@@ -275,7 +406,6 @@ export default function VideoPlayer() {
                 />
               </div>
 
-              {/* Control Buttons */}
               <div className="flex items-center justify-between px-6 pb-4">
                 <div className="flex items-center gap-4">
                   <button onClick={togglePlay} className="text-white hover:text-purple-400 transition">
@@ -301,45 +431,44 @@ export default function VideoPlayer() {
 
                 <div className="flex items-center gap-4 relative">
                   <button
-  onClick={() => {
-    if (!isFullscreen) return;
-    setShowSettings(false);
-    setShowPlaylist(!showPlaylist);
-  }}
-  className={`text-white transition ${
-    isFullscreen ? "hover:text-purple-400" : "opacity-40 cursor-not-allowed"
-  }`}
->
-  <ListVideo className="w-6 h-6" />
-</button>
+                    onClick={() => {
+                      if (!isFullscreen) return;
+                      setShowSettings(false);
+                      setShowPlaylist(!showPlaylist);
+                    }}
+                    className={`text-white transition ${
+                      isFullscreen ? "hover:text-purple-400" : "opacity-40 cursor-not-allowed"
+                    }`}
+                  >
+                    <ListVideo className="w-6 h-6" />
+                  </button>
 
                   <button
-  onClick={() => {
-    if (!isFullscreen) return;
-    setShowPlaylist(false);
-    setShowSettings(!showSettings);
-  }}
-  className={`text-white transition ${
-    isFullscreen ? "hover:text-purple-400" : "opacity-40 cursor-not-allowed"
-  }`}
->
-  <Settings className="w-6 h-6" />
-</button>
+                    onClick={() => {
+                      if (!isFullscreen) return;
+                      setShowPlaylist(false);
+                      setShowSettings(!showSettings);
+                    }}
+                    className={`text-white transition ${
+                      isFullscreen ? "hover:text-purple-400" : "opacity-40 cursor-not-allowed"
+                    }`}
+                  >
+                    <Settings className="w-6 h-6" />
+                  </button>
 
                   <button
-  onClick={() => {
-    if (isFullscreen) {
-      document.exitFullscreen();
-    } else {
-      toggleFullscreen('Horizontal');
-    }
-  }}
-  className="text-white hover:text-purple-400 transition"
->
-  {isFullscreen ? <Minimize className="w-6 h-6" /> : <Maximize className="w-6 h-6" />}
-</button>
+                    onClick={() => {
+                      if (isFullscreen) {
+                        document.exitFullscreen();
+                      } else {
+                        toggleFullscreen('Horizontal');
+                      }
+                    }}
+                    className="text-white hover:text-purple-400 transition"
+                  >
+                    {isFullscreen ? <Minimize className="w-6 h-6" /> : <Maximize className="w-6 h-6" />}
+                  </button>
 
-                  {/* Settings Menu */}
                   {showSettings && (
                     <div className="absolute bottom-full right-0 mb-2 bg-gray-900 rounded-lg shadow-2xl p-4 min-w-56">
                       <div className="flex items-center justify-between mb-2">
@@ -360,7 +489,6 @@ export default function VideoPlayer() {
                         ))}
                       </div>
                       <div className="text-white text-sm mt-3 mb-2 font-semibold border-t border-gray-700 pt-3">Fullscreen Mode</div>
-                      {/* Horizontal/Vertical selection - clicking Vertical will request fullscreen + rotate */}
                       <button
                         onClick={() => { changeOrientation('Horizontal'); toggleFullscreen('Horizontal'); }}
                         className={`block w-full text-left px-3 py-2 rounded transition ${orientation === 'Horizontal' ? 'bg-purple-600 text-white' : 'text-gray-300 hover:bg-gray-800'}`}
@@ -379,9 +507,8 @@ export default function VideoPlayer() {
               </div>
             </div>
 
-            {/* Playlist Sidebar (still inside rotated wrapper so it rotates too) */}
             {showPlaylist && (
-              <div className="absolute top-0 right-0 bottom-0 w-80 bg-gray-900 bg-opacity-95 backdrop-blur-sm p-6 overflow-y-auto">
+              <div className="absolute top-0 right-0 bottom-0 w-80 bg-gray-900 bg-opacity-95 backdrop-blur-sm p-6 overflow-y-auto z-40">
                 <div className="flex items-center justify-between mb-6">
                   <h3 className="text-white font-bold text-lg">Playlist</h3>
                   <button onClick={() => setShowPlaylist(false)} className="text-gray-400 hover:text-white">
@@ -403,10 +530,8 @@ export default function VideoPlayer() {
               </div>
             )}
           </div>
-          {/* end rotatedInner wrapper */}
         </div>
 
-        {/* Video Title and Info (shown only when not fullscreen) */}
         {!isFullscreen && (
           <div className="mt-6 text-white">
             <h2 className="text-2xl font-bold mb-2">{playlist[currentVideo].title}</h2>
@@ -435,9 +560,14 @@ export default function VideoPlayer() {
           box-shadow: 0 2px 8px rgba(147, 51, 234, 0.5);
         }
 
-        /* Ensure body doesn't scroll when in pseudo-fullscreen (container is truly fullscreen via Fullscreen API) */
         :global(body) {
           margin: 0;
+        }
+
+        @keyframes fadeInOut {
+          0% { opacity: 0; transform: scale(0.8); }
+          50% { opacity: 1; transform: scale(1.1); }
+          100% { opacity: 0; transform: scale(1); }
         }
       `}</style>
     </div>
