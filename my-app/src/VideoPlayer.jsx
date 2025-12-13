@@ -9,9 +9,9 @@ import {
   Settings,
   SkipBack,
   SkipForward,
-  Repeat,
   ListVideo,
-  Loader2
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 
 export default function VideoPlayer() {
@@ -33,6 +33,8 @@ export default function VideoPlayer() {
   const [showThumbnail, setShowThumbnail] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [seekAnimation, setSeekAnimation] = useState({ show: false, direction: null });
+  const [videoError, setVideoError] = useState(false);
+  const [isFirstLoad, setIsFirstLoad] = useState(true);
   
   const controlsTimeoutRef = useRef(null);
   const leftTapRef = useRef({ count: 0, timer: null });
@@ -55,10 +57,20 @@ export default function VideoPlayer() {
     const handleLoadedMetadata = () => setDuration(video.duration || 0);
     const handleEnded = () => setIsPlaying(false);
     const handleWaiting = () => setIsLoading(true);
-    const handleCanPlay = () => setIsLoading(false);
+    const handleCanPlay = () => {
+      setIsLoading(false);
+      setVideoError(false);
+    };
     const handleSeeking = () => setIsLoading(true);
     const handleSeeked = () => setIsLoading(false);
-    const handlePlaying = () => setIsLoading(false);
+    const handlePlaying = () => {
+      setIsLoading(false);
+      setVideoError(false);
+    };
+    const handleError = () => {
+      setIsLoading(false);
+      setVideoError(true);
+    };
 
     video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
@@ -68,6 +80,7 @@ export default function VideoPlayer() {
     video.addEventListener('seeking', handleSeeking);
     video.addEventListener('seeked', handleSeeked);
     video.addEventListener('playing', handlePlaying);
+    video.addEventListener('error', handleError);
 
     return () => {
       video.removeEventListener('timeupdate', handleTimeUpdate);
@@ -78,17 +91,31 @@ export default function VideoPlayer() {
       video.removeEventListener('seeking', handleSeeking);
       video.removeEventListener('seeked', handleSeeked);
       video.removeEventListener('playing', handlePlaying);
+      video.removeEventListener('error', handleError);
     };
   }, []);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    video.load();
+    
+    setVideoError(false);
+    
+    if (isFirstLoad) {
+      setShowThumbnail(true);
+      setIsLoading(false);
+      setIsFirstLoad(false);
+    } else {
+      setShowThumbnail(false);
+      setIsLoading(true);
+      video.load();
+      video.play().then(() => {
+        setIsPlaying(true);
+      }).catch(() => {
+        setIsPlaying(false);
+      });
+    }
     setCurrentTime(0);
-    setIsPlaying(false);
-    setShowThumbnail(true);
-    setIsLoading(false);
   }, [currentVideo]);
 
   useEffect(() => {
@@ -129,9 +156,10 @@ export default function VideoPlayer() {
   }, []);
 
   const togglePlay = () => {
-    if (!videoRef.current) return;
+    if (!videoRef.current || videoError) return;
     if (showThumbnail) {
       setShowThumbnail(false);
+      setIsLoading(true);
     }
     if (isPlaying) {
       videoRef.current.pause();
@@ -195,7 +223,7 @@ export default function VideoPlayer() {
         setIsFullscreen(true);
         await lockOrientation(orient);
       } catch (err) {
-        console.error('Error requesting fullscreen:', err);
+        console.warn('Error requesting fullscreen:', err);
       }
     } else {
       if (orient && orient !== orientation) {
@@ -208,7 +236,7 @@ export default function VideoPlayer() {
           setIsFullscreen(false);
           setOrientation('Horizontal');
         } catch (err) {
-          console.error('Error exiting fullscreen:', err);
+          console.warn('Error exiting fullscreen:', err);
         }
       }
     }
@@ -225,6 +253,7 @@ export default function VideoPlayer() {
   const skipTime = (seconds) => {
     if (videoRef.current) {
       videoRef.current.currentTime += seconds;
+      showSeekAnimation(seconds < 0 ? 'left' : 'right');
     }
   };
 
@@ -236,13 +265,17 @@ export default function VideoPlayer() {
   };
 
   const handleDoubleTapLeft = () => {
-    skipTime(-10);
-    showSeekAnimation('left');
+    if (videoRef.current) {
+      videoRef.current.currentTime -= 10;
+      showSeekAnimation('left');
+    }
   };
 
   const handleDoubleTapRight = () => {
-    skipTime(10);
-    showSeekAnimation('right');
+    if (videoRef.current) {
+      videoRef.current.currentTime += 10;
+      showSeekAnimation('right');
+    }
   };
 
   const handleLeftZoneTap = (e) => {
@@ -303,6 +336,8 @@ export default function VideoPlayer() {
 
   const innerStyle = { width: '100%', height: '100%' };
 
+  const isVertical = orientation === 'Vertical' && isFullscreen;
+
   return (
     <div
       className={`${isFullscreen ? 'fixed inset-0 z-50 bg-black' : 'min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900'} flex items-center justify-center ${isFullscreen ? '' : 'p-4'}`}
@@ -314,7 +349,7 @@ export default function VideoPlayer() {
           onMouseMove={handleMouseMove}
           onMouseLeave={() => isPlaying && setShowControls(false)}
         >
-          <div style={innerStyle} className="relative">
+          <div style={innerStyle} className="relative flex items-center justify-center">
             <video
               ref={videoRef}
               className={`bg-black ${isFullscreen ? 'w-full h-full object-contain' : 'w-full aspect-video'}`}
@@ -323,17 +358,19 @@ export default function VideoPlayer() {
 
             {showThumbnail && (
               <div 
-                className="absolute inset-0 transition-opacity duration-500"
+                className={`absolute ${isVertical ? 'w-full h-full' : 'inset-0'} transition-opacity duration-500`}
                 style={{
                   backgroundImage: 'url(/thumbnail.jpg)',
-                  backgroundSize: 'cover',
+                  backgroundSize: isVertical ? 'contain' : 'cover',
                   backgroundPosition: 'center',
+                  backgroundRepeat: 'no-repeat',
                   filter: 'blur(4px)',
+                  backgroundColor: 'black',
                 }}
               />
             )}
 
-            {showThumbnail && (
+            {showThumbnail && !videoError && (
               <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-40">
                 <button
                   onClick={togglePlay}
@@ -344,13 +381,23 @@ export default function VideoPlayer() {
               </div>
             )}
 
-            {isLoading && !showThumbnail && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30 pointer-events-none">
+            {videoError && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-80 z-40">
+                <div className="text-center p-6 max-w-md">
+                  <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+                  <h3 className="text-white text-xl font-bold mb-2">Error</h3>
+                  <p className="text-gray-300">There is some problem in running the video. Kindly use another Source.</p>
+                </div>
+              </div>
+            )}
+
+            {isLoading && !showThumbnail && !videoError && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30 pointer-events-none z-30">
                 <Loader2 className="w-16 h-16 text-purple-500 animate-spin" />
               </div>
             )}
 
-            {!showThumbnail && !isPlaying && !isLoading && (
+            {!showThumbnail && !isPlaying && !isLoading && !videoError && (
               <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30 transition-opacity">
                 <button
                   onClick={togglePlay}
@@ -361,17 +408,21 @@ export default function VideoPlayer() {
               </div>
             )}
 
-            <div 
-              className="absolute left-0 top-0 bottom-0 w-1/3 z-20"
-              onClick={handleLeftZoneTap}
-            />
-            <div 
-              className="absolute right-0 top-0 bottom-0 w-1/3 z-20"
-              onClick={handleRightZoneTap}
-            />
+            {!videoError && (
+              <>
+                <div 
+                  className="absolute left-0 top-0 bottom-0 w-1/3 z-20"
+                  onClick={handleLeftZoneTap}
+                />
+                <div 
+                  className="absolute right-0 top-0 bottom-0 w-1/3 z-20"
+                  onClick={handleRightZoneTap}
+                />
+              </>
+            )}
 
             {seekAnimation.show && seekAnimation.direction === 'left' && (
-              <div className="absolute left-8 top-1/2 -translate-y-1/2 flex items-center gap-2 text-white animate-pulse z-30 pointer-events-none">
+              <div className="absolute left-8 top-1/2 -translate-y-1/2 flex items-center gap-2 text-white z-30 pointer-events-none animate-seek-left">
                 <div className="flex items-center gap-1 bg-black bg-opacity-60 rounded-full px-4 py-2">
                   <SkipBack className="w-8 h-8" />
                   <span className="text-lg font-bold">10s</span>
@@ -380,7 +431,7 @@ export default function VideoPlayer() {
             )}
 
             {seekAnimation.show && seekAnimation.direction === 'right' && (
-              <div className="absolute right-8 top-1/2 -translate-y-1/2 flex items-center gap-2 text-white animate-pulse z-30 pointer-events-none">
+              <div className="absolute right-8 top-1/2 -translate-y-1/2 flex items-center gap-2 text-white z-30 pointer-events-none animate-seek-right">
                 <div className="flex items-center gap-1 bg-black bg-opacity-60 rounded-full px-4 py-2">
                   <span className="text-lg font-bold">10s</span>
                   <SkipForward className="w-8 h-8" />
@@ -540,7 +591,7 @@ export default function VideoPlayer() {
         )}
       </div>
 
-      <style jsx>{`
+      <style>{`
         .slider::-webkit-slider-thumb {
           appearance: none;
           width: 16px;
@@ -560,14 +611,28 @@ export default function VideoPlayer() {
           box-shadow: 0 2px 8px rgba(147, 51, 234, 0.5);
         }
 
-        :global(body) {
+        body {
           margin: 0;
         }
 
-        @keyframes fadeInOut {
-          0% { opacity: 0; transform: scale(0.8); }
-          50% { opacity: 1; transform: scale(1.1); }
-          100% { opacity: 0; transform: scale(1); }
+        @keyframes seekLeft {
+          0% { opacity: 0; transform: translateY(-50%) translateX(20px); }
+          30% { opacity: 1; transform: translateY(-50%) translateX(0); }
+          100% { opacity: 0; transform: translateY(-50%) translateX(-20px); }
+        }
+
+        @keyframes seekRight {
+          0% { opacity: 0; transform: translateY(-50%) translateX(-20px); }
+          30% { opacity: 1; transform: translateY(-50%) translateX(0); }
+          100% { opacity: 0; transform: translateY(-50%) translateX(20px); }
+        }
+
+        .animate-seek-left {
+          animation: seekLeft 0.5s ease-out forwards;
+        }
+
+        .animate-seek-right {
+          animation: seekRight 0.5s ease-out forwards;
         }
       `}</style>
     </div>
